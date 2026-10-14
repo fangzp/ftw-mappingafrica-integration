@@ -27,7 +27,7 @@ from torchmetrics.classification import (
 )
 from torchvision.models._api import WeightsEnum
 from .losses import *
-from ftw.metrics import get_object_level_metrics
+from .metrics import get_object_level_metrics
 
 
 class CustomSemanticSegmentationTask(BaseTask):

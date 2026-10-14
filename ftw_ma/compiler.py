@@ -15,7 +15,7 @@ from .trainers import CustomSemanticSegmentationTask
 
 import yaml
 
-from ftw.metrics import get_object_level_metrics
+from .metrics import get_object_level_metrics
 # from .metrics import get_object_level_metrics
 # from PIL import Image
 

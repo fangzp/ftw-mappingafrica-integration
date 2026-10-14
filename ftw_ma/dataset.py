@@ -253,12 +253,14 @@ class FTWMapAfrica(NonGeoDataset):
 
         # image = torch.cat(images, dim=0)
         image = np.concatenate(images, axis=0).astype(np.float32)
-        image = torch.from_numpy(image).float()
+        # Ensure image tensor has its own resizable storage
+        image = torch.from_numpy(image).float().clone()
 
         # Load mask
         with rasterio.open(filenames["mask"]) as f:
-            mask = f.read(1)
-        mask = torch.from_numpy(mask).long()
+            # Ensure mask has its own resizable storage (avoid memmap-backed arrays)
+            mask = f.read(1).copy()
+        mask = torch.from_numpy(mask).long().clone()
 
         sample = {"image": image, "mask": mask}
 
