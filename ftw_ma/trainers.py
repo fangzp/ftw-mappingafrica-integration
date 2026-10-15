@@ -315,6 +315,8 @@ class CustomSemanticSegmentationTask(BaseTask):
             }
             self.model.load_state_dict(model_state_dict, strict=True)
             print("Successfully loaded model weights")
+        elif isinstance(weights, str) and weights.endswith('.safetensors'):
+            self.load_two_window_weights(weights)
 
         # patch weights (if needed)
         if patch_weights:
@@ -635,6 +637,41 @@ class CustomSemanticSegmentationTask(BaseTask):
         per_class = self.test_metrics.compute()
         self._log_per_class(per_class, "test")
         self.test_metrics.reset()
+
+    def load_two_window_weights(self, path: str) -> None:
+        """Load an 8-channel (two-window) smp state dict into a 4-channel model.
+
+        The first conv's two 4-channel halves are summed, equivalent to feeding
+        the single-date chip as both windows.
+        """
+        from safetensors.torch import load_file
+
+        print(f"Loading two-window weights from {path}")
+        state_dict = load_file(path)
+        model_sd = self.model.state_dict()
+        mismatched = [
+            k for k, v in state_dict.items()
+            if k in model_sd and v.shape != model_sd[k].shape
+        ]
+        if len(mismatched) != 1:
+            raise ValueError(
+                f"Expected exactly one shape-mismatched key (the first conv), got {mismatched}"
+            )
+        key = mismatched[0]
+        w = state_dict[key]
+        target = model_sd[key].shape
+        if w.ndim != 4 or w.shape[1] != 8 or target[1] != 4 or w.shape[0] != target[0]:
+            raise ValueError(
+                f"{key}: expected 8-channel checkpoint conv into 4-channel model, "
+                f"got {tuple(w.shape)} -> {tuple(target)}"
+            )
+        state_dict[key] = w[:, :4] + w[:, 4:]
+        print(f"Collapsed {key}: {tuple(w.shape)} -> {tuple(state_dict[key].shape)} (sum of halves)")
+        result = self.model.load_state_dict(state_dict, strict=False)
+        print(f"missing keys ({len(result.missing_keys)}): {result.missing_keys}")
+        print(f"unexpected keys ({len(result.unexpected_keys)}): {result.unexpected_keys}")
+        if result.missing_keys or result.unexpected_keys:
+            raise ValueError("Two-window checkpoint does not match the model architecture")
 
     def transfer_weights(self, model, backbone):
         base_model = None

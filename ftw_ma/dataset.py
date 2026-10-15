@@ -24,6 +24,7 @@ def load_image(
     stat_procedure="lab",
     global_stats=None,
     clip_val=0,
+    nodata_all_bands=False,
 ):
     """
     Load and preprocess an image.
@@ -37,6 +38,7 @@ def load_image(
             normalization.
         global_stats (tuple, list, optional): Global stats for normalization.
         clip_val (float, optional): Clipping value for normalization.
+        nodata_all_bands (bool, optional): Pixel is nodata only when all bands are.
 
     Returns:
         np.ndarray: Loaded and preprocessed image as a numpy array.
@@ -54,6 +56,7 @@ def load_image(
             global_stats=global_stats,
             clip_val=clip_val,
             nodata=nodata_val_ls,
+            nodata_all_bands=nodata_all_bands,
         )
 
     return img
@@ -142,6 +145,8 @@ class FTWMapAfrica(NonGeoDataset):
         global_stats: Optional[Union[Dict[str, Any], Tuple, List]] = None,
         img_clip_val: float = 0,
         nodata: list = None,
+        nodata_all_bands: bool = False,
+        nodata_mask_value: Optional[int] = None,
     ) -> None:
 
         """
@@ -159,6 +164,9 @@ class FTWMapAfrica(NonGeoDataset):
             global_stats (tuple, list): Precomputed global stats.
             img_clip_val (float): Value to clip image data.
             nodata (list): List of nodata values.
+            nodata_all_bands (bool): Pixel is nodata only when all bands are.
+            nodata_mask_value (int, optional): Mask value (the loss's
+                ignore_index) written at window_a nodata pixels.
         """
         self.data = pd.read_csv(catalog).query(f"split == '{split}'")
         self.data_dir = data_dir
@@ -170,6 +178,10 @@ class FTWMapAfrica(NonGeoDataset):
         self.global_stats = global_stats
         self.img_clip_val = img_clip_val
         self.nodata = nodata
+        self.nodata_all_bands = nodata_all_bands
+        self.nodata_mask_value = nodata_mask_value
+        if nodata_mask_value is not None and not nodata:
+            raise ValueError("nodata_mask_value requires nodata values")
         self.filenames = []
         all_filenames = []
 
@@ -235,7 +247,8 @@ class FTWMapAfrica(NonGeoDataset):
                 normal_strategy=self.normalization_strategy,
                 stat_procedure=self.normalization_stat_procedure,
                 global_stats=self.global_stats,
-                clip_val=self.img_clip_val
+                clip_val=self.img_clip_val,
+                nodata_all_bands=self.nodata_all_bands,
             )           
             images.append(window_a_img)
 
@@ -247,7 +260,8 @@ class FTWMapAfrica(NonGeoDataset):
                 normal_strategy=self.normalization_strategy,
                 stat_procedure=self.normalization_stat_procedure,
                 global_stats=self.global_stats,
-                clip_val=self.img_clip_val
+                clip_val=self.img_clip_val,
+                nodata_all_bands=self.nodata_all_bands,
             )
             images.append(window_b_img)
 
@@ -260,6 +274,11 @@ class FTWMapAfrica(NonGeoDataset):
         with rasterio.open(filenames["mask"]) as f:
             # Ensure mask has its own resizable storage (avoid memmap-backed arrays)
             mask = f.read(1).copy()
+        if self.nodata_mask_value is not None:
+            with rasterio.open(filenames["window_a"]) as f:
+                invalid = np.isin(f.read(), self.nodata)
+            invalid = invalid.all(axis=0) if self.nodata_all_bands else invalid.any(axis=0)
+            mask[invalid] = self.nodata_mask_value
         mask = torch.from_numpy(mask).long().clone()
 
         sample = {"image": image, "mask": mask}

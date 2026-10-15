@@ -79,6 +79,8 @@ Data classes based on those in `ftw-baselines` and `torchgeo` are used here, bas
 
 ## Training and evaluation
 
+Uganda Maxar bakeoff (data prep, configs, `ftp-b3` init, scorer outputs): see [`tools/uganda_maxar/README.md`](tools/uganda_maxar/README.md). The `ftp-b3` weights it can initialize from are **CC-BY-NC-4.0** (non-commercial).
+
 From the CLI, the model can be trained as follows:
 
 ```bash

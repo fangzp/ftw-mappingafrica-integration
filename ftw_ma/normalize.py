@@ -13,6 +13,7 @@ def normalize_image(
     clip_val=0,
     nodata=[0, 65535],
     epsilon=1e-6,
+    nodata_all_bands=False,
 ):
     """
     Normalize the input image pixels to a user-defined range based on the
@@ -34,6 +35,9 @@ def normalize_image(
         clip_val (float, optional): Defines how much of the distribution
             tails to be cut off. Default is 0.
         nodata (list, optional): Values reserved to show nodata.
+        nodata_all_bands (bool, optional): Treat a pixel as nodata only when
+            every band holds a nodata value. Needed for per-band stretched
+            imagery, where a legitimate band minimum is 0.
         epsilon (float, optional): Small constant added to the denominator
             to prevent division by zero.
 
@@ -70,7 +74,10 @@ def normalize_image(
 
     # Create a mask for nodata values and replace them with nan for computation.
     # Also create a copy for normalization
-    img_tmp = np.where((img < 0) | np.isin(img, nodata), np.nan, img.astype(np.float64))
+    invalid = (img < 0) | np.isin(img, nodata)
+    if nodata_all_bands:
+        invalid = np.broadcast_to(invalid.all(axis=0, keepdims=True), img.shape)
+    img_tmp = np.where(invalid, np.nan, img.astype(np.float64))
     normal_img = img.astype(np.float32)
     
     # Create valid pixel mask for setting nodata pixels to 0 at the end

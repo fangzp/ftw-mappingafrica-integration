@@ -1,4 +1,5 @@
 # FTWMapAfricaDataModule for managing data loading and augmentation
+import json
 from typing import Optional, Union, Dict, Any, Tuple, List
 import kornia
 import kornia.augmentation as K
@@ -33,6 +34,9 @@ class FTWMapAfricaDataModule(LightningDataModule):
         normalization_stat_procedure: str = "gab",
         random_shuffle: bool = False,
         crop_size: Optional[Union[int, Tuple[int, int]]] = None,
+        random_resized_crop: bool = True,
+        global_stats_file: Optional[str] = None,
+        global_stats_key: Optional[str] = None,
         **kwargs
     ):
         """
@@ -52,6 +56,11 @@ class FTWMapAfricaDataModule(LightningDataModule):
             crop_size (int or tuple): Size for RandomResizedCrop. 
                 Can be int (for square) or (height, width) tuple.
                 If None, defaults to (256, 256).
+            random_resized_crop (bool): Include the RandomResizedCrop
+                augmentation. False trains on chips at native size and scale.
+            global_stats_file (str, optional): JSON holding per-band stats;
+                global_stats are read from its `global_stats_key` entry.
+            global_stats_key (str, optional): Key in global_stats_file.
             **kwargs: Additional arguments for FTWMapAfrica.
         """
         if "split" in kwargs:
@@ -67,6 +76,16 @@ class FTWMapAfricaDataModule(LightningDataModule):
             normalization_stat_procedure = kwargs.pop("normalization_stat_procedure")
         if "crop_size" in kwargs:
             crop_size = kwargs.pop("crop_size")
+
+        if global_stats_file is not None:
+            if global_stats is not None:
+                raise ValueError("Give global_stats or global_stats_file, not both")
+            if global_stats_key is None:
+                raise ValueError("global_stats_file requires global_stats_key")
+            with open(global_stats_file) as f:
+                entry = json.load(f)[global_stats_key]
+            global_stats = {"mean": entry["mean"], "std": entry["std"]}
+            print(f"Read global_stats from {global_stats_file} [{global_stats_key}]")
 
         # normalize global_stats (accept dict/list/tuple)
         if isinstance(global_stats, dict):
@@ -137,14 +156,22 @@ class FTWMapAfricaDataModule(LightningDataModule):
             K.RandomHorizontalFlip(p=0.5),
             K.RandomVerticalFlip(p=0.5),
             K.RandomSharpness(p=0.5),
-            K.RandomBrightness(p=0.5, brightness=(0.5, 1.5)),
-            K.RandomResizedCrop(
-                size=self.crop_size,
-                scale=(0.3, 0.9),
-                ratio=(0.75, 1.33),
-                p=0.5
-            )
+            # Clip to [0, 1] only for min_max inputs; z-scored inputs span negatives.
+            K.RandomBrightness(
+                p=0.5,
+                brightness=(0.5, 1.5),
+                clip_output=normalization_strategy == "min_max",
+            ),
         ]
+        if random_resized_crop:
+            augs.append(
+                K.RandomResizedCrop(
+                    size=self.crop_size,
+                    scale=(0.3, 0.9),
+                    ratio=(0.75, 1.33),
+                    p=0.5
+                )
+            )
         
         if random_shuffle:
             augs.append(kornia.contrib.Lambda(randomChannelShuffle))

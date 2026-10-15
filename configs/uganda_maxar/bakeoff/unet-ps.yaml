@@ -1,0 +1,49 @@
+# Uganda bakeoff UNet arm: PS 0.5 m (pan_coverage == 1.0 only), BGRN single window, 3-class, ImageNet init.
+# Fixed schedule; report last.ckpt. Validation runs on the test split (monitoring only).
+# Stats: train set, nodata excluded (uganda_coco_20261014_derived/pixel_stats.json).
+
+trainer:
+  max_epochs: 100
+  log_every_n_steps: 10
+  accelerator: cuda
+  default_root_dir: /nfs/hpc/share/fangzha/outputs/uganda_bakeoff/unet_ps
+  devices: [0]
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: null
+        save_top_k: 1
+        save_last: true
+        filename: '{epoch}'
+model:
+  class_path: ftw_ma.trainers.CustomSemanticSegmentationTask
+  init_args:
+    loss: localtversky
+    model: unet
+    backbone: efficientnet-b3
+    weights: true
+    patch_weights: false
+    in_channels: 4
+    num_classes: 3
+    ignore_index: 3
+    lr: 1e-3
+    patience: 100  # CosineAnnealingLR T_max in epochs; equals max_epochs
+data:
+  class_path: ftw_ma.datamodule.FTWMapAfricaDataModule
+  init_args:
+    temporal_options: windowA
+    batch_size: 4  # 1024 px chips
+    num_workers: 8
+    num_samples: -1
+    random_resized_crop: false
+    data_dir: /nfs/hpc/share/fangzha/data/uganda_coco_20261014_derived/unet_3class/pansharpened_fullpan
+    catalog: /nfs/hpc/share/fangzha/data/uganda_coco_20261014_derived/unet_3class/pansharpened_fullpan/uganda-maxar-catalog.csv
+    normalization_strategy: z_value
+    normalization_stat_procedure: gpb
+    global_stats_file: /nfs/hpc/share/fangzha/data/uganda_coco_20261014_derived/pixel_stats.json
+    global_stats_key: ps_fullpan
+    img_clip_val: 0
+    nodata: [0]
+    nodata_all_bands: true
+    nodata_mask_value: 3
+seed_everything: 42
